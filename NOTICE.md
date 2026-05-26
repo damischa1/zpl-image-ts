@@ -13,10 +13,14 @@ original implementation byte-for-byte via the golden vector test suite under
 ## What was changed in this port
 
 - Rewritten in TypeScript with full type declarations.
-- Node-only: no browser fallback, no `pako` dependency. Uses Node's built-in
-  `node:zlib` for deflate. (Isomorphic browser support is feasible via
-  `CompressionStream('deflate')` and `Uint8Array.prototype.toBase64()`;
-  see the README for the sketch. Not implemented today.)
+- Isomorphic: runs in Node.js 18+ and any modern browser with zero runtime
+  dependencies. Uses the web-standard `CompressionStream('deflate')`
+  (global in Node 18+ and all evergreen browsers since 2023) instead of
+  `pako` or `node:zlib`. Uses native
+  `Uint8Array.prototype.toBase64()` when available (Node 22+, Chrome 133+,
+  Firefox 133+, Safari 18.2+) with a portable `btoa` fallback.
+- Public `rgbaToZ64` is async (returns `Promise<Result>`) because
+  `CompressionStream` is stream-based. Output is byte-identical to upstream.
 - ESM with named exports (the original was a UMD bundle whose
   `module.exports = factory()` pattern hid named exports from Node's
   cjs-module-lexer, breaking `import {rgbaToZ64}` under real ESM).

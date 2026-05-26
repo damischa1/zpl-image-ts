@@ -3,15 +3,16 @@
  *
  * Algorithm credit: Mark Warren (https://github.com/metafloor/zpl-image),
  * MIT 2019. This file is a direct transliteration of the corresponding
- * routines in upstream zpl-image.js, narrowed to the Node code path and
- * the rgbaToZ64 surface only. See NOTICE.md for full attribution.
+ * routines in upstream zpl-image.js, narrowed to the rgbaToZ64 surface.
+ * See NOTICE.md for full attribution.
+ *
+ * Isomorphic: uses web-standard `CompressionStream('deflate')` (global in
+ * Node 18+ and every evergreen browser) and `Uint8Array.prototype.toBase64()`
+ * when available, with a portable btoa-based fallback. Zero runtime deps.
  */
 
-import {deflateSync} from 'node:zlib';
-import {Buffer} from 'node:buffer';
-
 /** Pixel data input. Each pixel is four consecutive bytes: R, G, B, A. */
-export type RgbaInput = Uint8Array | Uint8ClampedArray | Buffer | readonly number[];
+export type RgbaInput = Uint8Array | Uint8ClampedArray | readonly number[];
 
 export interface RgbaToZ64Options {
     /** Blackness threshold, 1..99. Default 50. */
@@ -55,11 +56,11 @@ interface MonoBuffer {
  * `^GFA,${r.length},${r.length},${r.rowlen},${r.z64}`
  * ```
  */
-export function rgbaToZ64(
+export async function rgbaToZ64(
     rgba: RgbaInput,
     width: number,
     opts: RgbaToZ64Options = {},
-): RgbaToZ64Result {
+): Promise<RgbaToZ64Result> {
     const w = width | 0;
     if (!w || w < 0) {
         throw new Error('Invalid width');
@@ -89,7 +90,8 @@ export function rgbaToZ64(
     const imgw = buf.width;
     const imgh = buf.height;
     const rowl = Math.trunc((imgw + 7) / 8);
-    const b64 = deflateSync(buf.data).toString('base64');
+    const deflated = await deflateZlib(buf.data);
+    const b64 = bytesToBase64(deflated);
 
     return {
         length: buf.data.length,
@@ -98,6 +100,27 @@ export function rgbaToZ64(
         height: imgh,
         z64: ':Z64:' + b64 + ':' + crc16(b64),
     };
+}
+
+// ---------------------------------------------------------------------------
+// Web-standard isomorphic primitives (no Node-specific imports)
+// ---------------------------------------------------------------------------
+
+async function deflateZlib(buf: Uint8Array): Promise<Uint8Array> {
+    const stream = new Blob([buf])
+        .stream()
+        .pipeThrough(new CompressionStream('deflate'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function bytesToBase64(buf: Uint8Array): string {
+    // TC39 native: Node 22+, Chrome 133+, Firefox 133+, Safari 18.2+.
+    const native = (buf as unknown as {toBase64?: () => string}).toBase64;
+    if (typeof native === 'function') return native.call(buf);
+    // Portable fallback: btoa is global in Node 16+ and all browsers.
+    let s = '';
+    for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i] as number);
+    return btoa(s);
 }
 
 // ---------------------------------------------------------------------------
