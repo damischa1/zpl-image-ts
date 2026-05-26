@@ -1,7 +1,7 @@
 MIT License
 
-Copyright 2019 Mark Warren (original JavaScript implementation, https://github.com/metafloor/zpl-image)
-Copyright 2026 damischa1 (TypeScript port, https://github.com/damischa1/zpl-image-ts)
+Copyright (c) 2019 Mark Warren (original zpl-image, https://github.com/metafloor/zpl-image)
+Copyright (c) 2026 Mika Salminen (TypeScript port)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
