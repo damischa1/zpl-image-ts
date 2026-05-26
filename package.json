@@ -1,0 +1,62 @@
+{
+    "name": "zpl-image-ts",
+    "version": "0.1.0",
+    "type": "module",
+    "description": "TypeScript port of metafloor/zpl-image's rgbaToZ64 -- RGBA bitmap to Zebra Z64 ^GFA payload.",
+    "license": "MIT",
+    "author": "damischa1",
+    "engines": {
+        "node": ">=20"
+    },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist",
+        "src",
+        "LICENSE",
+        "NOTICE.md",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "typecheck": "tsc -p tsconfig.check.json",
+        "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+        "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.{json,md}\"",
+        "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"*.{json,md}\"",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@types/node": "^24.12.4",
+        "eslint": "^10.4.0",
+        "prettier": "^3.8.3",
+        "typescript": "^6.0.0",
+        "typescript-eslint": "^8.49.0",
+        "vitest": "^4.1.7"
+    },
+    "keywords": [
+        "zebra",
+        "zpl",
+        "z64",
+        "gfa",
+        "label",
+        "barcode",
+        "rgba",
+        "typescript"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/damischa1/zpl-image-ts.git"
+    },
+    "homepage": "https://github.com/damischa1/zpl-image-ts",
+    "bugs": {
+        "url": "https://github.com/damischa1/zpl-image-ts/issues"
+    }
+}
