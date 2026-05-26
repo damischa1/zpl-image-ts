@@ -59,11 +59,6 @@ function rgbaToZ64(
 the type was dropped from the signature to keep the package free of
 `@types/node` requirements in browser builds.
 
-The function is `async` because the underlying `CompressionStream` API is
-stream-based -- there is no synchronous web-standard equivalent. In Node
-the deflate is still effectively synchronous (a single microtask), so the
-overhead is negligible.
-
 ## Runtime requirements
 
 | Runtime | Required APIs | Status |
