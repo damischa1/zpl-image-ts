@@ -14,13 +14,21 @@ original implementation byte-for-byte via the golden vector test suite under
 
 - Rewritten in TypeScript with full type declarations.
 - Node-only: no browser fallback, no `pako` dependency. Uses Node's built-in
-  `node:zlib` for deflate.
+  `node:zlib` for deflate. (Isomorphic browser support is feasible via
+  `CompressionStream('deflate')` and `Uint8Array.prototype.toBase64()`;
+  see the README for the sketch. Not implemented today.)
 - ESM with named exports (the original was a UMD bundle whose
   `module.exports = factory()` pattern hid named exports from Node's
   cjs-module-lexer, breaking `import {rgbaToZ64}` under real ESM).
-- Narrowed scope: only `rgbaToZ64` is exported. The original's
-  `rgbaToACS`, `imageToZ64`, `imageToACS`, and DOM helpers were dropped --
-  they are easy to reintroduce later if needed.
+- Narrowed scope: only `rgbaToZ64` is exported.
+  - `rgbaToACS` (Alternative Data Compression Scheme) is intentionally not
+    ported -- Z64 is universally supported on modern Zebra firmware and
+    compresses better. ACS is easy to re-add (~30 LOC) on top of the
+    existing pipeline if needed.
+  - `imageToZ64` / `imageToACS` are browser DOM helpers that wrap
+    `<canvas>.getImageData()`. With `createImageBitmap()` +
+    `OffscreenCanvas` they are a one-liner at the call site, so they are
+    not bundled.
 - Vitest test suite with golden vectors captured from the upstream package
   guarantees bit-exact compatibility.
 
