@@ -38,17 +38,22 @@ export async function rgbaToZ64(
     const {buf, rowlen} = prepare(rgba, width, opts);
     const deflated = await deflateZlib(buf.data);
     const b64 = bytesToBase64(deflated);
+    const z64 = ':Z64:' + b64 + ':' + crc16(b64);
+    const length = buf.data.length;
     return {
-        length: buf.data.length,
+        length,
         rowlen,
         width: buf.width,
         height: buf.height,
-        z64: ':Z64:' + b64 + ':' + crc16(b64),
+        z64,
+        gfa: '^GFA,' + length + ',' + length + ',' + rowlen + ',' + z64,
     };
 }
 
 async function deflateZlib(buf: Uint8Array): Promise<Uint8Array> {
-    const stream = new Blob([buf])
+    // Cast: TS DOM lib types Blob parts as needing ArrayBuffer-backed views,
+    // but the spec accepts any BufferSource (incl. SharedArrayBuffer-backed).
+    const stream = new Blob([buf as BlobPart])
         .stream()
         .pipeThrough(new CompressionStream('deflate'));
     return new Uint8Array(await new Response(stream).arrayBuffer());

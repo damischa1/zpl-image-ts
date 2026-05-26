@@ -38,6 +38,13 @@ export interface BitmapResult {
     width: number;
     /** Image height after rotation (pixels). */
     height: number;
+    /**
+     * Ready-to-emit `^GFA,length,length,rowlen,payload` command string.
+     * Wrap it in `^XA ... ^XZ` (with any `^FO` / `^PR` / `~SD` etc. you need)
+     * and send to the printer. Saves consumers from re-templating the
+     * length-twice, rowlen-third structure by hand.
+     */
+    gfa: string;
 }
 
 export interface MonoBuffer {

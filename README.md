@@ -9,12 +9,13 @@ browser, with zero runtime dependencies.
 import {rgbaToZ64} from 'zpl-image-ts';
 
 const result = await rgbaToZ64(rgbaBuffer, width, {rotate: 'R'});
-// `^GFA,${result.length},${result.length},${result.rowlen},${result.z64}`
+// result.gfa === `^GFA,${result.length},${result.length},${result.rowlen},${result.z64}`
+const zpl = '^XA' + result.gfa + '^FS^XZ';
 ```
 
 ## Import paths
 
-Three entry points -- pick whichever matches what you need:
+Four entry points -- pick whichever matches what you need:
 
 ```ts
 // Convenience barrel. Bundlers with sideEffects:false respect it and
@@ -25,10 +26,16 @@ import {rgbaToZ64, rgbaToACS} from 'zpl-image-ts';
 // and (for /z64) the 256-entry CRC16 table are never bundled.
 import {rgbaToZ64} from 'zpl-image-ts/z64';
 import {rgbaToACS} from 'zpl-image-ts/acs';
+
+// Browser DOM helpers -- rasterise an ImageBitmapSource (HTMLImageElement,
+// Blob, ImageData, ImageBitmap, OffscreenCanvas, ...) before encoding.
+// Pulls in zero DOM types on the server side because it lives behind its
+// own subpath.
+import {imageToZ64, imageToACS} from 'zpl-image-ts/browser';
 ```
 
-All three paths re-export `RgbaInput` and `RgbaOptions`. The `./z64` and
-`./acs` subpaths additionally export their own `RgbaToZ64Result` /
+All four paths re-export `RgbaInput` and `RgbaOptions`. The encoder
+subpaths additionally export their own `RgbaToZ64Result` /
 `RgbaToACSResult` types.
 
 ## Why a fork?
@@ -42,9 +49,12 @@ All three paths re-export `RgbaInput` and `RgbaOptions`. The `./z64` and
 - Isomorphic with zero dependencies: drops `pako` in favour of the
   web-standard `CompressionStream('deflate')` (global in Node 18+ and all
   evergreen browsers since 2023). No Node-specific imports.
-- Narrower API surface (`rgbaToZ64` + `rgbaToACS` only -- the DOM-bound
-  `imageToZ64` / `imageToACS` helpers are replaced by a one-liner using
-  `createImageBitmap()` + `OffscreenCanvas`).
+- `result.gfa` ergonomic: every encoder result includes a ready-to-emit
+  `^GFA,length,length,rowlen,payload` string, so call sites do not have
+  to template the four fields by hand.
+- Optional browser DOM helpers (`imageToZ64` / `imageToACS`) under the
+  separate `zpl-image-ts/browser` entry point, tree-shaken out of
+  server bundles.
 
 ## Credits
 
@@ -80,6 +90,7 @@ function rgbaToZ64(
     width: number;  // rotated image width in pixels
     height: number; // rotated image height in pixels
     z64: string;    // ':Z64:<base64>:<crc16hex>' -> ^GFA arg 4
+    gfa: string;    // '^GFA,length,length,rowlen,z64' -- ready to splice into ZPL
 }>;
 
 // Hex + run-length codes (Alternative Data Compression Scheme).
@@ -96,7 +107,32 @@ function rgbaToACS(
     width: number;
     height: number;
     acs: string;    // hex with G..Y / g..z / z run-length codes
+    gfa: string;    // '^GFA,length,length,rowlen,acs' -- ready to splice into ZPL
 };
+
+// Browser-only convenience helpers -- subpath `zpl-image-ts/browser`.
+// Rasterise any ImageBitmapSource (HTMLImageElement, Blob, ImageData,
+// ImageBitmap, OffscreenCanvas, ...) via createImageBitmap +
+// OffscreenCanvas, then run it through rgbaToZ64 / rgbaToACS.
+function imageToZ64(
+    source: ImageBitmapSource,
+    opts?: RgbaOptions,
+): Promise<RgbaToZ64Result>;
+
+function imageToACS(
+    source: ImageBitmapSource,
+    opts?: RgbaOptions,
+): Promise<RgbaToACSResult>;
+```
+
+### Splicing into a ZPL label
+
+```ts
+const result = await rgbaToZ64(rgba, width);
+const zpl = '^XA' + result.gfa + '^FS^XZ';
+// equivalent to manually writing:
+//   '^XA^GFA,' + result.length + ',' + result.length + ',' +
+//   result.rowlen + ',' + result.z64 + '^FS^XZ'
 ```
 
 `Node.js Buffer` is accepted at runtime since `Buffer extends Uint8Array`;
@@ -146,22 +182,6 @@ faster and smaller than `pako`):
 import {zlibSync} from 'fflate';
 import {rgbaToACS} from 'zpl-image-ts/acs';
 // ...build your own rgbaToZ64 by replacing the deflate step with zlibSync().
-```
-
-### Browser DOM helpers (`imageToZ64` / `imageToACS`)
-
-Upstream's `imageToZ64` / `imageToACS` take an `HTMLImageElement`, draw it
-onto a `<canvas>`, and extract RGBA via `getImageData()`. These are thin
-convenience wrappers -- in modern code the equivalent is one line using
-`createImageBitmap()` + `OffscreenCanvas`, so they are not bundled:
-
-```ts
-const bitmap = await createImageBitmap(blob);
-const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-const ctx = canvas.getContext('2d')!;
-ctx.drawImage(bitmap, 0, 0);
-const {data, width} = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-const result = await rgbaToZ64(data, width);
 ```
 
 ## Development

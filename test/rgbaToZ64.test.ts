@@ -6,7 +6,7 @@ import {
     type RgbaOptions,
     type RgbaToZ64Result,
     type RgbaToACSResult,
-} from '../src/index.ts';
+} from '../src/index.js';
 // JSON imports work in both Node ESM (via Vite) and browser mode.
 import z64FixturesJson from './fixtures/fixtures.json' with {type: 'json'};
 import acsFixturesJson from './fixtures/fixtures-acs.json' with {type: 'json'};
@@ -48,7 +48,12 @@ describe('rgbaToZ64 -- bit-exact compatibility with upstream metafloor/zpl-image
         it(fx.name, async () => {
             const rgba = base64ToBytes(fx.rgba);
             const got = await rgbaToZ64(rgba, fx.width, fx.opts);
-            expect(got).toEqual(fx.expected);
+            const {length, rowlen, z64} = fx.expected;
+            const expected = {
+                ...fx.expected,
+                gfa: `^GFA,${length},${length},${rowlen},${z64}`,
+            };
+            expect(got).toEqual(expected);
         });
     }
 });
@@ -58,7 +63,12 @@ describe('rgbaToACS -- bit-exact compatibility with upstream metafloor/zpl-image
         it(fx.name, () => {
             const rgba = base64ToBytes(fx.rgba);
             const got = rgbaToACS(rgba, fx.width, fx.opts);
-            expect(got).toEqual(fx.expected);
+            const {length, rowlen, acs} = fx.expected;
+            const expected = {
+                ...fx.expected,
+                gfa: `^GFA,${length},${length},${rowlen},${acs}`,
+            };
+            expect(got).toEqual(expected);
         });
     }
 });
@@ -201,3 +211,61 @@ describe('rgbaToZ64 -- structural invariants', () => {
         expect(a.height).toBe(4);
     });
 });
+
+describe('result.gfa convenience field', () => {
+    it('z64 result.gfa is ^GFA,length,length,rowlen,z64', async () => {
+        const buf = new Uint8Array(8 * 4 * 4);
+        for (let i = 0; i < buf.length; i += 4) buf[i + 3] = 0xff;
+        const r = await rgbaToZ64(buf, 8, {notrim: true});
+        expect(r.gfa).toBe(`^GFA,${r.length},${r.length},${r.rowlen},${r.z64}`);
+    });
+
+    it('acs result.gfa is ^GFA,length,length,rowlen,acs', () => {
+        const buf = new Uint8Array(8 * 4 * 4);
+        for (let i = 0; i < buf.length; i += 4) buf[i + 3] = 0xff;
+        const r = rgbaToACS(buf, 8, {notrim: true});
+        expect(r.gfa).toBe(`^GFA,${r.length},${r.length},${r.rowlen},${r.acs}`);
+    });
+});
+
+describe.skipIf(typeof createImageBitmap === 'undefined')(
+    'browser helpers (zpl-image-ts/browser)',
+    () => {
+        it('imageToZ64 + imageToACS via ImageData match the raw rgbaToZ64/ACS path', async () => {
+            const {imageToZ64, imageToACS} = await import('../src/browser.js');
+            const w = 12,
+                h = 8;
+            const data = new Uint8ClampedArray(w * h * 4);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const i = (y * w + x) * 4;
+                    const black = (x + y) % 2 === 0;
+                    data[i] = data[i + 1] = data[i + 2] = black ? 0 : 0xff;
+                    data[i + 3] = 0xff;
+                }
+            }
+            const imageData = new ImageData(data, w, h);
+            const z = await imageToZ64(imageData, {notrim: true});
+            const a = await imageToACS(imageData, {notrim: true});
+            const directZ = await rgbaToZ64(data, w, {notrim: true});
+            const directA = rgbaToACS(data, w, {notrim: true});
+            expect(z).toEqual(directZ);
+            expect(a).toEqual(directA);
+        });
+
+        it('imageToZ64 accepts an ImageBitmap and does not close caller bitmaps', async () => {
+            const {imageToZ64} = await import('../src/browser.js');
+            const w = 8,
+                h = 4;
+            const data = new Uint8ClampedArray(w * h * 4);
+            for (let i = 0; i < data.length; i += 4) data[i + 3] = 0xff;
+            const bitmap = await createImageBitmap(new ImageData(data, w, h));
+            const r = await imageToZ64(bitmap, {notrim: true});
+            expect(r.width).toBe(w);
+            expect(r.height).toBe(h);
+            // Caller-owned bitmap must still be usable.
+            expect(bitmap.width).toBe(w);
+            bitmap.close();
+        });
+    },
+);

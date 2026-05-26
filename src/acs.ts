@@ -70,12 +70,14 @@ export function rgbaToACS(
     }
     acs += hex.substring(offset);
 
+    const length = buf.data.length;
     return {
-        length: buf.data.length,
+        length,
         rowlen,
         width: buf.width,
         height: buf.height,
         acs,
+        gfa: '^GFA,' + length + ',' + length + ',' + rowlen + ',' + acs,
     };
 }
 
