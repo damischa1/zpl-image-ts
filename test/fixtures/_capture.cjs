@@ -77,6 +77,113 @@ const cases = [
         opts: {notrim: true, black: 75},
         rgba: makeRgba(8, 8, (x) => [x * 32, x * 32, x * 32, 255]),
     },
+
+    // ----- Bit-packing edge cases: non-byte-aligned widths -----
+    // The packing loop emits a partial byte whenever bitx == width OR (bitx & 7) == 0.
+    // Widths that are not multiples of 8 stress the "trailing partial byte" branch.
+    {
+        name: 'width-1-tall',
+        width: 1, height: 16,
+        opts: {notrim: true},
+        rgba: makeRgba(1, 16, (_x, y) => (y & 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'width-7-checker',
+        width: 7, height: 5,
+        opts: {notrim: true},
+        rgba: makeRgba(7, 5, (x, y) => ((x + y) & 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'width-9-vertical-stripes',
+        width: 9, height: 4,
+        opts: {notrim: true},
+        rgba: makeRgba(9, 4, (x) => (x & 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'width-15-horizontal-stripes',
+        width: 15, height: 6,
+        opts: {notrim: true},
+        rgba: makeRgba(15, 6, (_x, y) => (y & 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'width-17-diagonal',
+        width: 17, height: 17,
+        opts: {notrim: true},
+        rgba: makeRgba(17, 17, (x, y) => x === y ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'width-33-frame',
+        width: 33, height: 12,
+        opts: {notrim: true},
+        rgba: makeRgba(33, 12, (x, y) =>
+            (x === 0 || x === 32 || y === 0 || y === 11) ? [0,0,0,255] : [255,255,255,255]),
+    },
+
+    // ----- Rotation completeness -----
+    {
+        name: 'rotate-N-explicit-8x4',
+        width: 8, height: 4,
+        opts: {notrim: true, rotate: 'N'},
+        rgba: makeRgba(8, 4, (x, y) => ((x + y) & 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+    {
+        name: 'rotate-B-alias-for-L-asymmetric',
+        // Asymmetric pattern: row index visible in output after rotation
+        width: 8, height: 4,
+        opts: {notrim: true, rotate: 'B'},
+        rgba: makeRgba(8, 4, (x, y) => (x < y + 1) ? [0,0,0,255] : [255,255,255,255]),
+    },
+
+    // ----- Luminance weighting (.3 R + .59 G + .11 B) -----
+    // Pure green should appear darkest at full intensity (.59 weight),
+    // pure blue should remain almost white (.11). black=50 -> threshold = 127.5
+    {
+        name: 'pure-red-8x1',
+        width: 8, height: 1,
+        opts: {notrim: true},
+        rgba: makeRgba(8, 1, (x) => [x * 36, 0, 0, 255]),
+    },
+    {
+        name: 'pure-green-8x1',
+        width: 8, height: 1,
+        opts: {notrim: true},
+        rgba: makeRgba(8, 1, (x) => [0, x * 36, 0, 255]),
+    },
+    {
+        name: 'pure-blue-8x1',
+        width: 8, height: 1,
+        opts: {notrim: true},
+        rgba: makeRgba(8, 1, (x) => [0, 0, x * 36, 255]),
+    },
+
+    // ----- Alpha edge cases -----
+    {
+        name: 'fully-transparent-black-is-white',
+        width: 8, height: 4,
+        opts: {notrim: true},
+        rgba: makeRgba(8, 4, () => [0, 0, 0, 0]),
+    },
+
+    // ----- Trim with asymmetric bounding box -----
+    // Black square offset to bottom-right -> minx,miny > 0 and maxx,maxy < edges.
+    {
+        name: 'trim-asymmetric-bbox',
+        width: 24, height: 16,
+        opts: {},
+        rgba: makeRgba(24, 16, (x, y) =>
+            (x >= 17 && x < 22 && y >= 11 && y < 14) ? [0,0,0,255] : [255,255,255,255]),
+    },
+
+    // ----- Realistic-size deflate determinism -----
+    // Larger image with a repeating pattern; verifies node:zlib output matches upstream
+    // byte-for-byte (default compression level, raw deflate via zlib.deflateSync).
+    {
+        name: 'large-200x96-pattern',
+        width: 200, height: 96,
+        opts: {notrim: true},
+        rgba: makeRgba(200, 96, (x, y) =>
+            ((x >> 3) + (y >> 3)) & 1 ? [0,0,0,255] : [255,255,255,255]),
+    },
 ];
 
 const out = cases.map(c => ({
