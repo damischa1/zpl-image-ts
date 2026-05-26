@@ -1,7 +1,3 @@
-import {readFileSync} from 'node:fs';
-import {Buffer} from 'node:buffer';
-import {fileURLToPath} from 'node:url';
-import {dirname, resolve} from 'node:path';
 import {describe, expect, it} from 'vitest';
 
 import {
@@ -11,6 +7,9 @@ import {
     type RgbaToZ64Result,
     type RgbaToACSResult,
 } from '../src/index.ts';
+// JSON imports work in both Node ESM (via Vite) and browser mode.
+import z64FixturesJson from './fixtures/fixtures.json' with {type: 'json'};
+import acsFixturesJson from './fixtures/fixtures-acs.json' with {type: 'json'};
 
 interface Z64Fixture {
     name: string;
@@ -31,18 +30,23 @@ interface ACSFixture {
     expected: RgbaToACSResult;
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
-const z64Fixtures = JSON.parse(
-    readFileSync(resolve(here, 'fixtures', 'fixtures.json'), 'utf8'),
-) as Z64Fixture[];
-const acsFixtures = JSON.parse(
-    readFileSync(resolve(here, 'fixtures', 'fixtures-acs.json'), 'utf8'),
-) as ACSFixture[];
+const z64Fixtures = z64FixturesJson as Z64Fixture[];
+const acsFixtures = acsFixturesJson as ACSFixture[];
+
+/** Isomorphic base64 -> Uint8Array. */
+function base64ToBytes(b64: string): Uint8Array {
+    const native = (Uint8Array as unknown as {fromBase64?: (s: string) => Uint8Array}).fromBase64;
+    if (typeof native === 'function') return native(b64);
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
 
 describe('rgbaToZ64 -- bit-exact compatibility with upstream metafloor/zpl-image', () => {
     for (const fx of z64Fixtures) {
         it(fx.name, async () => {
-            const rgba = new Uint8Array(Buffer.from(fx.rgba, 'base64'));
+            const rgba = base64ToBytes(fx.rgba);
             const got = await rgbaToZ64(rgba, fx.width, fx.opts);
             expect(got).toEqual(fx.expected);
         });
@@ -52,7 +56,7 @@ describe('rgbaToZ64 -- bit-exact compatibility with upstream metafloor/zpl-image
 describe('rgbaToACS -- bit-exact compatibility with upstream metafloor/zpl-image', () => {
     for (const fx of acsFixtures) {
         it(fx.name, () => {
-            const rgba = new Uint8Array(Buffer.from(fx.rgba, 'base64'));
+            const rgba = base64ToBytes(fx.rgba);
             const got = rgbaToACS(rgba, fx.width, fx.opts);
             expect(got).toEqual(fx.expected);
         });
@@ -68,8 +72,8 @@ describe('rgbaToZ64 -- input validation', () => {
         await expect(rgbaToZ64(new Uint8Array(16), -4)).rejects.toThrow(/Invalid width/);
     });
 
-    it('accepts Buffer input', async () => {
-        const data = Buffer.alloc(8 * 4 * 4, 0xff);
+    it('accepts Uint8ClampedArray input', async () => {
+        const data = new Uint8ClampedArray(8 * 4 * 4);
         for (let i = 0; i < data.length; i++) data[i] = 0xff;
         const r = await rgbaToZ64(data, 8, {notrim: true});
         expect(r.width).toBe(8);
