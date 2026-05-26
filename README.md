@@ -138,30 +138,15 @@ That global is available in:
 Runtimes older than the above (Safari 16.3 and below, Firefox 112 and below,
 any Internet Explorer) **are not supported and no polyfill is bundled**.
 
-This is a deliberate design decision. Shipping a deflate polyfill (`pako`,
-`fflate`, etc.) would either:
-
-1. Bloat every consumer's bundle by 8 -- 45 kB for a code path the vast
-   majority will never execute, or
-2. Require an optional peer dependency + dynamic `import()`, which causes
-   bundler warnings ("failed to resolve 'fflate'") for modern consumers who
-   correctly do not install it.
-
-Both costs fall on the 99 % majority targeting current browsers. The 1 %
-who genuinely need to support Safari 16.3 or earlier can wrap this library
-themselves in three lines using [`fflate`](https://github.com/101arrowz/fflate)
-(recommended -- ~8 kB min+gz, faster and smaller than `pako`):
+If you need to support those runtimes, wrap this library yourself in three
+lines using [`fflate`](https://github.com/101arrowz/fflate) (~8 kB min+gz,
+faster and smaller than `pako`):
 
 ```ts
 import {zlibSync} from 'fflate';
 import {rgbaToACS} from 'zpl-image-ts/acs';
 // ...build your own rgbaToZ64 by replacing the deflate step with zlibSync().
 ```
-
-The library's `prepare()` pipeline, CRC16 routine, and base64 envelope are
-all isomorphic and pure-JS; only the compression step requires a polyfill
-on legacy runtimes, and exposing a hook for that one step would not be
-worth the extra surface area.
 
 ### Browser DOM helpers (`imageToZ64` / `imageToACS`)
 
