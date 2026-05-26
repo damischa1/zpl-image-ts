@@ -24,17 +24,13 @@ original implementation byte-for-byte via the golden vector test suite under
 - ESM with named exports (the original was a UMD bundle whose
   `module.exports = factory()` pattern hid named exports from Node's
   cjs-module-lexer, breaking `import {rgbaToZ64}` under real ESM).
-- Narrowed scope: only `rgbaToZ64` is exported.
-  - `rgbaToACS` (Alternative Data Compression Scheme) is intentionally not
-    ported -- Z64 is universally supported on modern Zebra firmware and
-    compresses better. ACS is easy to re-add (~30 LOC) on top of the
-    existing pipeline if needed.
-  - `imageToZ64` / `imageToACS` are browser DOM helpers that wrap
-    `<canvas>.getImageData()`. With `createImageBitmap()` +
-    `OffscreenCanvas` they are a one-liner at the call site, so they are
-    not bundled.
+- Narrowed scope: `rgbaToZ64` and `rgbaToACS` are exported.
+  `imageToZ64` / `imageToACS` are browser DOM helpers that wrap
+  `<canvas>.getImageData()`. With `createImageBitmap()` +
+  `OffscreenCanvas` they are a one-liner at the call site, so they are not
+  bundled.
 - Vitest test suite with golden vectors captured from the upstream package
-  guarantees bit-exact compatibility.
+  guarantees bit-exact compatibility for both `rgbaToZ64` and `rgbaToACS`.
 
 ## Original upstream license
 

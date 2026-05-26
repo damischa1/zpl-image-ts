@@ -2,7 +2,7 @@
 // TypeScript port can be verified bit-exact. Run once; output is checked in.
 const fs = require('node:fs');
 const path = require('node:path');
-const {rgbaToZ64} = require('zpl-image');
+const {rgbaToZ64, rgbaToACS} = require('zpl-image');
 
 function makeRgba(w, h, fillFn) {
     const buf = new Uint8Array(w * h * 4);
@@ -198,3 +198,16 @@ const out = cases.map(c => ({
 const outPath = path.resolve(__dirname, 'fixtures.json');
 fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
 console.log('Wrote', out.length, 'fixtures to', outPath);
+
+// ----- ACS fixtures (same cases, separate file). -----
+const acsOut = cases.map(c => ({
+    name: c.name,
+    width: c.width,
+    height: c.height,
+    opts: c.opts,
+    rgba: Buffer.from(c.rgba).toString('base64'),
+    expected: rgbaToACS(c.rgba, c.width, c.opts),
+}));
+const acsPath = path.resolve(__dirname, 'fixtures-acs.json');
+fs.writeFileSync(acsPath, JSON.stringify(acsOut, null, 2));
+console.log('Wrote', acsOut.length, 'ACS fixtures to', acsPath);

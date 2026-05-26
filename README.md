@@ -23,7 +23,9 @@ const result = await rgbaToZ64(rgbaBuffer, width, {rotate: 'R'});
 - Isomorphic with zero dependencies: drops `pako` in favour of the
   web-standard `CompressionStream('deflate')` (global in Node 18+ and all
   evergreen browsers since 2023). No Node-specific imports.
-- Narrower API surface (only `rgbaToZ64`), smaller install.
+- Narrower API surface (`rgbaToZ64` + `rgbaToACS` only -- the DOM-bound
+  `imageToZ64` / `imageToACS` helpers are replaced by a one-liner using
+  `createImageBitmap()` + `OffscreenCanvas`).
 
 ## Credits
 
@@ -35,24 +37,47 @@ distributed under the MIT license.
 ## API
 
 ```ts
+type RgbaInput = Uint8Array | Uint8ClampedArray | readonly number[];
+
+interface RgbaOptions {
+    /** Blackness threshold 1..99. Default 50. */
+    black?: number;
+    /** Skip auto-trimming whitespace padding. Default false. */
+    notrim?: boolean;
+    /** 'N' (none), 'L' / 'B' (90 CCW), 'R' (90 CW), 'I' (180). */
+    rotate?: 'N' | 'L' | 'R' | 'I' | 'B';
+}
+
+// Deflate + base64 + CRC16 (preferred -- shorter on the wire, supported on
+// every modern Zebra printer). Async because CompressionStream is the
+// underlying web-standard primitive.
 function rgbaToZ64(
-    rgba: Uint8Array | Uint8ClampedArray | number[],
+    rgba: RgbaInput,
     width: number,
-    opts?: {
-        /** Blackness threshold 1..99. Default 50. */
-        black?: number;
-        /** Skip auto-trimming whitespace padding. Default false. */
-        notrim?: boolean;
-        /** 'N' (none), 'L' / 'B' (90 CCW), 'R' (90 CW), 'I' (180). */
-        rotate?: 'N' | 'L' | 'R' | 'I' | 'B';
-    },
+    opts?: RgbaOptions,
 ): Promise<{
     length: number; // uncompressed byte count -> ^GFA arg 1 & 2
     rowlen: number; // packed bytes per row    -> ^GFA arg 3
-    width: number; // rotated image width in pixels
+    width: number;  // rotated image width in pixels
     height: number; // rotated image height in pixels
-    z64: string; // ':Z64:<base64>:<crc16hex>' -> ^GFA arg 4
+    z64: string;    // ':Z64:<base64>:<crc16hex>' -> ^GFA arg 4
 }>;
+
+// Hex + run-length codes (Alternative Data Compression Scheme).
+// Synchronous -- no compression library needed. Useful when you want a
+// hex-readable payload for debugging, or for older Zebra firmware that
+// predates Z64 support.
+function rgbaToACS(
+    rgba: RgbaInput,
+    width: number,
+    opts?: RgbaOptions,
+): {
+    length: number;
+    rowlen: number;
+    width: number;
+    height: number;
+    acs: string;    // hex with G..Y / g..z / z run-length codes
+};
 ```
 
 `Node.js Buffer` is accepted at runtime since `Buffer extends Uint8Array`;
@@ -74,42 +99,19 @@ Firefox 133+, Safari 18.2+) is used when available; otherwise a portable
 
 ## Compatibility
 
-Output is verified bit-exact against upstream `zpl-image@0.3.0` via the
-golden-vector suite in `test/fixtures/fixtures.json`. Any drift fails the
-test run.
+Output is verified bit-exact against upstream `zpl-image@0.3.0` for both
+`rgbaToZ64` and `rgbaToACS` via golden-vector suites in
+`test/fixtures/fixtures.json` and `test/fixtures/fixtures-acs.json`. Any
+drift fails the test run.
 
 ## What is intentionally not ported
 
-The following upstream feature is **not implemented** in this port. It is
-not needed for the typical "PNG → Zebra label" pipeline; it can be added
-later if a concrete need arises.
+### Browser DOM helpers (`imageToZ64` / `imageToACS`)
 
-### `rgbaToACS` (Alternative Data Compression Scheme)
-
-Upstream also exposes `rgbaToACS`, which produces a hex-encoded ZPL payload
-using ZPL's run-length codes (`G..Y`, `g..z`) instead of the `:Z64:`
-deflate + base64 + CRC16 envelope.
-
-ACS is essentially obsolete on modern Zebra firmware:
-
-- **Z64 is universally supported** on every Zebra printer made in the last
-  ~10 years (ZD-, ZT-, ZQ-series and later).
-- **Z64 is shorter on the wire** because deflate compresses far better
-  than ACS run-length codes (especially on photo-like data).
-- ACS is only useful if (a) you're targeting pre-2010 firmware that lacks
-  Z64, (b) you need hex-readable output for debugging, or (c) your
-  transport mangles `+` / `/` / `=` in base64.
-
-If you ever do need ACS, the internal `monochrome` / `normal` / `invert` /
-`left` / `right` pipeline is already in place -- only a ~30-line ACS
-encoder would have to be added.
-
-### Browser DOM helpers (`imageToZ64`)
-
-Upstream's `imageToZ64` takes an `HTMLImageElement`, draws it onto a
-`<canvas>`, and extracts RGBA via `getImageData()`. This is a thin
-convenience wrapper -- in modern code the equivalent is one line using
-`createImageBitmap()` + `OffscreenCanvas`, so it is not bundled:
+Upstream's `imageToZ64` / `imageToACS` take an `HTMLImageElement`, draw it
+onto a `<canvas>`, and extract RGBA via `getImageData()`. These are thin
+convenience wrappers -- in modern code the equivalent is one line using
+`createImageBitmap()` + `OffscreenCanvas`, so they are not bundled:
 
 ```ts
 const bitmap = await createImageBitmap(blob);

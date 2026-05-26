@@ -4,27 +4,56 @@ import {fileURLToPath} from 'node:url';
 import {dirname, resolve} from 'node:path';
 import {describe, expect, it} from 'vitest';
 
-import {rgbaToZ64, type RgbaToZ64Options, type RgbaToZ64Result} from '../src/index.ts';
+import {
+    rgbaToZ64,
+    rgbaToACS,
+    type RgbaOptions,
+    type RgbaToZ64Result,
+    type RgbaToACSResult,
+} from '../src/index.ts';
 
-interface Fixture {
+interface Z64Fixture {
     name: string;
     width: number;
     height: number;
-    opts: RgbaToZ64Options;
+    opts: RgbaOptions;
     /** base64-encoded RGBA bytes */
     rgba: string;
     expected: RgbaToZ64Result;
 }
 
+interface ACSFixture {
+    name: string;
+    width: number;
+    height: number;
+    opts: RgbaOptions;
+    rgba: string;
+    expected: RgbaToACSResult;
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
-const raw = readFileSync(resolve(here, 'fixtures', 'fixtures.json'), 'utf8');
-const fixtures = JSON.parse(raw) as Fixture[];
+const z64Fixtures = JSON.parse(
+    readFileSync(resolve(here, 'fixtures', 'fixtures.json'), 'utf8'),
+) as Z64Fixture[];
+const acsFixtures = JSON.parse(
+    readFileSync(resolve(here, 'fixtures', 'fixtures-acs.json'), 'utf8'),
+) as ACSFixture[];
 
 describe('rgbaToZ64 -- bit-exact compatibility with upstream metafloor/zpl-image', () => {
-    for (const fx of fixtures) {
+    for (const fx of z64Fixtures) {
         it(fx.name, async () => {
             const rgba = new Uint8Array(Buffer.from(fx.rgba, 'base64'));
             const got = await rgbaToZ64(rgba, fx.width, fx.opts);
+            expect(got).toEqual(fx.expected);
+        });
+    }
+});
+
+describe('rgbaToACS -- bit-exact compatibility with upstream metafloor/zpl-image', () => {
+    for (const fx of acsFixtures) {
+        it(fx.name, () => {
+            const rgba = new Uint8Array(Buffer.from(fx.rgba, 'base64'));
+            const got = rgbaToACS(rgba, fx.width, fx.opts);
             expect(got).toEqual(fx.expected);
         });
     }

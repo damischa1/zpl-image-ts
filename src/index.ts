@@ -1,10 +1,9 @@
 /**
- * zpl-image-ts -- TypeScript port of metafloor/zpl-image's rgbaToZ64.
+ * zpl-image-ts -- TypeScript port of metafloor/zpl-image.
  *
  * Algorithm credit: Mark Warren (https://github.com/metafloor/zpl-image),
  * MIT 2019. This file is a direct transliteration of the corresponding
- * routines in upstream zpl-image.js, narrowed to the rgbaToZ64 surface.
- * See NOTICE.md for full attribution.
+ * routines in upstream zpl-image.js. See NOTICE.md for full attribution.
  *
  * Isomorphic: uses web-standard `CompressionStream('deflate')` (global in
  * Node 18+ and every evergreen browser) and `Uint8Array.prototype.toBase64()`
@@ -14,7 +13,8 @@
 /** Pixel data input. Each pixel is four consecutive bytes: R, G, B, A. */
 export type RgbaInput = Uint8Array | Uint8ClampedArray | readonly number[];
 
-export interface RgbaToZ64Options {
+/** Options shared by `rgbaToZ64` and `rgbaToACS`. */
+export interface RgbaOptions {
     /** Blackness threshold, 1..99. Default 50. */
     black?: number;
     /** If true, do not auto-trim surrounding whitespace. Default false. */
@@ -29,7 +29,10 @@ export interface RgbaToZ64Options {
     rotate?: 'N' | 'L' | 'R' | 'I' | 'B';
 }
 
-export interface RgbaToZ64Result {
+/** @deprecated Use `RgbaOptions`. Kept as an alias for source compatibility. */
+export type RgbaToZ64Options = RgbaOptions;
+
+interface ResultBase {
     /** Uncompressed byte count; used for `^GFA` args 1 and 2. */
     length: number;
     /** Packed bytes per row; used for `^GFA` arg 3. */
@@ -38,8 +41,16 @@ export interface RgbaToZ64Result {
     width: number;
     /** Image height after rotation (pixels). */
     height: number;
+}
+
+export interface RgbaToZ64Result extends ResultBase {
     /** `:Z64:<base64>:<crc16hex>` payload; used for `^GFA` arg 4. */
     z64: string;
+}
+
+export interface RgbaToACSResult extends ResultBase {
+    /** Hex-encoded payload with ACS run-length codes; used for `^GFA` arg 4. */
+    acs: string;
 }
 
 interface MonoBuffer {
@@ -48,25 +59,21 @@ interface MonoBuffer {
     height: number;
 }
 
+interface PreparedBitmap {
+    buf: MonoBuffer;
+    rowlen: number;
+}
+
 /**
- * Convert an RGBA bitmap to a Zebra Z64-encoded `^GFA` payload.
- *
- * Example usage of the result:
- * ```
- * `^GFA,${r.length},${r.length},${r.rowlen},${r.z64}`
- * ```
+ * Validate input, convert to monochrome, and apply the requested rotation.
+ * Shared by `rgbaToZ64` and `rgbaToACS`.
  */
-export async function rgbaToZ64(
-    rgba: RgbaInput,
-    width: number,
-    opts: RgbaToZ64Options = {},
-): Promise<RgbaToZ64Result> {
+function prepare(rgba: RgbaInput, width: number, opts: RgbaOptions): PreparedBitmap {
     const w = width | 0;
     if (!w || w < 0) {
         throw new Error('Invalid width');
     }
     const height = Math.trunc(rgba.length / w / 4);
-
     const black = +(opts.black ?? 0) || 50;
     const mono = monochrome(rgba, w, height, black, opts.notrim === true);
 
@@ -87,20 +94,103 @@ export async function rgbaToZ64(
             break;
     }
 
-    const imgw = buf.width;
-    const imgh = buf.height;
-    const rowl = Math.trunc((imgw + 7) / 8);
+    return {buf, rowlen: Math.trunc((buf.width + 7) / 8)};
+}
+
+/**
+ * Convert an RGBA bitmap to a Zebra Z64-encoded `^GFA` payload.
+ *
+ * Example usage of the result:
+ * ```
+ * `^GFA,${r.length},${r.length},${r.rowlen},${r.z64}`
+ * ```
+ */
+export async function rgbaToZ64(
+    rgba: RgbaInput,
+    width: number,
+    opts: RgbaOptions = {},
+): Promise<RgbaToZ64Result> {
+    const {buf, rowlen} = prepare(rgba, width, opts);
     const deflated = await deflateZlib(buf.data);
     const b64 = bytesToBase64(deflated);
-
     return {
         length: buf.data.length,
-        rowlen: rowl,
-        width: imgw,
-        height: imgh,
+        rowlen,
+        width: buf.width,
+        height: buf.height,
         z64: ':Z64:' + b64 + ':' + crc16(b64),
     };
 }
+
+/**
+ * Convert an RGBA bitmap to a Zebra ACS-encoded `^GFA` payload (hex +
+ * run-length codes). Synchronous; useful for environments where
+ * `CompressionStream` is unavailable or where you want a hex-readable
+ * payload for debugging.
+ *
+ * Example usage of the result:
+ * ```
+ * `^GFA,${r.length},${r.length},${r.rowlen},${r.acs}`
+ * ```
+ */
+export function rgbaToACS(
+    rgba: RgbaInput,
+    width: number,
+    opts: RgbaOptions = {},
+): RgbaToACSResult {
+    const {buf, rowlen} = prepare(rgba, width, opts);
+
+    // Hex encode.
+    let hex = '';
+    for (let i = 0, n = buf.data.length; i < n; i++) {
+        hex += hexmap[buf.data[i] as number];
+    }
+
+    // Apply ACS run-length compression:
+    //   G..Y      = repeats of 1..19
+    //   g..y      = repeats of 20..380 (in steps of 20)
+    //   z         = repeats of 400 (combined with above for higher counts)
+    const lowRun = '_ghijklmnopqrstuvwxy'; // 0..19 (slot 0 unused)
+    const highRun = '_GHIJKLMNOPQRSTUVWXY'; // 0..19 (slot 0 unused)
+    const re = /([0-9a-fA-F])\1{2,}/g;
+    let acs = '';
+    let offset = 0;
+    let match = re.exec(hex);
+    while (match) {
+        acs += hex.substring(offset, match.index);
+        let l = match[0].length;
+        while (l >= 400) {
+            acs += 'z';
+            l -= 400;
+        }
+        if (l >= 20) {
+            acs += lowRun[Math.trunc(l / 20)];
+            l = l % 20;
+        }
+        if (l) {
+            acs += highRun[l];
+        }
+        acs += match[1];
+        offset = re.lastIndex;
+        match = re.exec(hex);
+    }
+    acs += hex.substring(offset);
+
+    return {
+        length: buf.data.length,
+        rowlen,
+        width: buf.width,
+        height: buf.height,
+        acs,
+    };
+}
+
+const hexmap: ReadonlyArray<string> = (() => {
+    const arr = new Array<string>(256);
+    for (let i = 0; i < 16; i++) arr[i] = '0' + i.toString(16);
+    for (let i = 16; i < 256; i++) arr[i] = i.toString(16);
+    return arr;
+})();
 
 // ---------------------------------------------------------------------------
 // Web-standard isomorphic primitives (no Node-specific imports)
