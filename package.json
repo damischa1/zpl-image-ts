@@ -1,6 +1,6 @@
 {
   "name": "zpl-image-ts",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "RGBA bitmap to Zebra ^GFA payload encoder (Z64 + ACS) - TypeScript-native, isomorphic, tree-shakeable ESM port of metafloor/zpl-image",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,6 +22,10 @@
     "./browser": {
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js"
+    },
+    "./zpl": {
+      "types": "./dist/zpl.d.ts",
+      "import": "./dist/zpl.js"
     },
     "./package.json": "./package.json"
   },

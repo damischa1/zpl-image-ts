@@ -15,12 +15,12 @@ const zpl = '^XA' + result.gfa + '^FS^XZ';
 
 ## Import paths
 
-Four entry points -- pick whichever matches what you need:
+Five entry points -- pick whichever matches what you need:
 
 ```ts
 // Convenience barrel. Bundlers with sideEffects:false respect it and
 // tree-shake unused encoders automatically.
-import {rgbaToZ64, rgbaToACS} from 'zpl-image-ts';
+import {rgbaToZ64, rgbaToACS, buildZpl} from 'zpl-image-ts';
 
 // Explicit subpath -- guarantees the other encoder, its compression glue,
 // and (for /z64) the 256-entry CRC16 table are never bundled.
@@ -32,11 +32,16 @@ import {rgbaToACS} from 'zpl-image-ts/acs';
 // Pulls in zero DOM types on the server side because it lives behind its
 // own subpath.
 import {imageToZ64, imageToACS} from 'zpl-image-ts/browser';
+
+// ZPL label builder -- wrap one or more ^GFA blocks in a complete
+// ^XA...^XZ payload with darkness, print rate, copies, etc. Tiny and
+// dependency-free, so importing it from the barrel is fine too.
+import {buildZpl} from 'zpl-image-ts/zpl';
 ```
 
-All four paths re-export `RgbaInput` and `RgbaOptions`. The encoder
-subpaths additionally export their own `RgbaToZ64Result` /
-`RgbaToACSResult` types.
+All five paths re-export `RgbaInput` and `RgbaOptions` where relevant.
+The encoder subpaths additionally export their own `RgbaToZ64Result` /
+`RgbaToACSResult` types; the `zpl` subpath exports `ZplLabelOptions`.
 
 ## Why a fork?
 
@@ -55,6 +60,9 @@ subpaths additionally export their own `RgbaToZ64Result` /
 - Optional browser DOM helpers (`imageToZ64` / `imageToACS`) under the
   separate `zpl-image-ts/browser` entry point, tree-shaken out of
   server bundles.
+- Optional ZPL label builder (`buildZpl`) under `zpl-image-ts/zpl`:
+  darkness, print rate, copies, field origin, multi-page batches. So
+  callers never have to learn ZPL syntax just to print an image.
 
 ## Credits
 
@@ -123,16 +131,99 @@ function imageToACS(
     source: ImageBitmapSource,
     opts?: RgbaOptions,
 ): Promise<RgbaToACSResult>;
+
+// Wrap one or more ^GFA blocks in a complete ^XA...^XZ label. Subpath
+// `zpl-image-ts/zpl`. Re-exported from the barrel.
+interface ZplLabelOptions {
+    darkness?: number;                  // ~SD, 0..30, one decimal
+    printRate?: number;                 // ^PR, 1..14 (inches/sec on most printers)
+    copies?: number;                    // ^PQ, omitted when <= 1
+    fieldOrigin?: {x: number; y: number}; // ^FO before the ^GFA block
+    prelude?: string;                   // raw ZPL after ^XA  (e.g. ^PW, ^LL, ^MM)
+    postlude?: string;                  // raw ZPL before ^XZ (e.g. ^XB)
+}
+
+function buildZpl(
+    gfa: string | readonly string[],
+    opts?: ZplLabelOptions,
+): string;
 ```
 
 ### Splicing into a ZPL label
 
 ```ts
 const result = await rgbaToZ64(rgba, width);
-const zpl = '^XA' + result.gfa + '^FS^XZ';
+const zpl = '^XA' + result.gfa + '^XZ';
 // equivalent to manually writing:
 //   '^XA^GFA,' + result.length + ',' + result.length + ',' +
-//   result.rowlen + ',' + result.z64 + '^FS^XZ'
+//   result.rowlen + ',' + result.z64 + '^XZ'
+```
+
+For anything beyond the bare `^XA…^XZ` framing -- darkness, print rate,
+copy count, field origin -- use the `buildZpl` helper from
+`zpl-image-ts/zpl` (also re-exported from the barrel). It exists so the
+caller never has to learn ZPL syntax just to get an image onto paper:
+
+```ts
+import {rgbaToZ64, buildZpl} from 'zpl-image-ts';
+
+const result = await rgbaToZ64(rgba, width);
+const zpl = buildZpl(result.gfa, {
+    darkness: 15,        // ~SD15.0   (media darkness, 0..30, one decimal)
+    printRate: 4,        // ^PR4,A,A  (inches/sec, 1..14)
+    copies: 2,           // ^PQ2      (omitted when <= 1)
+    fieldOrigin: {x: 30, y: 15}, // ^FO30,15 before the ^GFA block
+});
+// -> '^XA^PR4,A,A~SD15.0^FO30,15^GFA,...^PQ2^XZ'
+```
+
+`buildZpl` also accepts an array of `gfa` strings -- e.g. one per page
+rasterised from a PDF -- and emits one `^XA…^XZ` block per entry,
+joined with `\n`. The same options apply to every label in the batch.
+For advanced cases the `prelude` and `postlude` options accept raw ZPL
+inserted directly after `^XA` and before `^XZ` respectively
+(e.g. `^PW`, `^LL`, `^MM`, `^XB`).
+
+### End-to-end: image to printer over TCP
+
+Zebra network printers accept raw ZPL on TCP port 9100. Combined with
+`imageToZ64` (browser/worker) or `rgbaToZ64` (Node + mupdf, sharp, etc.)
+the full pipeline is a handful of lines and the caller never types `^XA`:
+
+```ts
+// Node: PNG/JPG on disk -> ZPL -> printer
+import {readFile} from 'node:fs/promises';
+import {createConnection} from 'node:net';
+import sharp from 'sharp';
+import {rgbaToZ64, buildZpl} from 'zpl-image-ts';
+
+const png = await readFile('label.png');
+const {data, info} = await sharp(png)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({resolveWithObject: true});
+
+const result = await rgbaToZ64(data, info.width, {rotate: 'R'});
+const zpl = buildZpl(result.gfa, {darkness: 15, printRate: 4});
+
+await new Promise<void>((resolve, reject) => {
+    const sock = createConnection({host: '192.168.1.42', port: 9100}, () => {
+        sock.end(zpl, 'ascii', () => resolve());
+    });
+    sock.once('error', reject);
+});
+```
+
+```ts
+// Browser: <input type="file"> -> ZPL -> POST to your print proxy
+import {imageToZ64} from 'zpl-image-ts/browser';
+import {buildZpl} from 'zpl-image-ts/zpl';
+
+const file: Blob = input.files![0];
+const result = await imageToZ64(file, {rotate: 'R'});
+const zpl = buildZpl(result.gfa, {darkness: 15, printRate: 4});
+
+await fetch('/api/print', {method: 'POST', body: zpl});
 ```
 
 `Node.js Buffer` is accepted at runtime since `Buffer extends Uint8Array`;

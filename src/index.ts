@@ -16,4 +16,5 @@
 
 export {rgbaToZ64, type RgbaToZ64Result} from './z64.js';
 export {rgbaToACS, type RgbaToACSResult} from './acs.js';
+export {buildZpl, type ZplLabelOptions} from './zpl.js';
 export type {RgbaInput, RgbaOptions} from './internal/bitmap.js';
