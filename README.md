@@ -12,6 +12,25 @@ const result = await rgbaToZ64(rgbaBuffer, width, {rotate: 'R'});
 // `^GFA,${result.length},${result.length},${result.rowlen},${result.z64}`
 ```
 
+## Import paths
+
+Three entry points -- pick whichever matches what you need:
+
+```ts
+// Convenience barrel. Bundlers with sideEffects:false respect it and
+// tree-shake unused encoders automatically.
+import {rgbaToZ64, rgbaToACS} from 'zpl-image-ts';
+
+// Explicit subpath -- guarantees the other encoder, its compression glue,
+// and (for /z64) the 256-entry CRC16 table are never bundled.
+import {rgbaToZ64} from 'zpl-image-ts/z64';
+import {rgbaToACS} from 'zpl-image-ts/acs';
+```
+
+All three paths re-export `RgbaInput` and `RgbaOptions`. The `./z64` and
+`./acs` subpaths additionally export their own `RgbaToZ64Result` /
+`RgbaToACSResult` types.
+
 ## Why a fork?
 
 - Native TypeScript types (no community-maintained shim drift).
