@@ -51,11 +51,23 @@ export async function rgbaToZ64(
 }
 
 async function deflateZlib(buf: Uint8Array): Promise<Uint8Array> {
-    // Cast: TS DOM lib types Blob parts as needing ArrayBuffer-backed views,
-    // but the spec accepts any BufferSource (incl. SharedArrayBuffer-backed).
-    const stream = new Blob([buf as BlobPart])
-        .stream()
-        .pipeThrough(new CompressionStream('deflate'));
+    // A plain ReadableStream, not Blob.stream(): Node 24.16 leaks the whole
+    // Blob content on every Blob.stream() call (fixed in later 24.x), which
+    // grew a long-running print server to gigabytes.
+    const source = new ReadableStream<Uint8Array>({
+        start(controller) {
+            controller.enqueue(buf);
+            controller.close();
+        },
+    });
+    // Cast: TS DOM lib types CompressionStream input as ArrayBuffer-backed
+    // views, but the spec accepts any BufferSource.
+    const stream = source.pipeThrough(
+        new CompressionStream('deflate') as unknown as ReadableWritablePair<
+            Uint8Array<ArrayBuffer>,
+            Uint8Array
+        >,
+    );
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 

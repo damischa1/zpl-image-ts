@@ -1,6 +1,6 @@
 {
   "name": "zpl-image-ts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Image to Zebra ZPL: encode RGBA bitmaps to ^GFA (Z64 + ACS), wrap in ^XA…^XZ with darkness/print-rate/copies. TypeScript-native, isomorphic, tree-shakeable ESM port of metafloor/zpl-image.",
   "type": "module",
   "main": "./dist/index.js",
